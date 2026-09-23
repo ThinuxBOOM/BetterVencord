@@ -1,0 +1,23 @@
+# OS / editor noise
+Thumbs.db
+.DS_Store
+*.swp
+*~
+
+# Vencord build outputs (if you ever build in here)
+dist/
+node_modules/
+
+# PyInstaller + release staging (upload release/ to GitHub Releases, don't commit)
+build/
+*.spec
+pyinst.log
+release/
+installer/payload/
+
+# Theme backups, if any land here
+*.bak.*
+
+# NOTE: Vencord's own .gitignore (BetterVencord/.gitignore) ignores
+# src/userplugins/* except our discordStyler/ (re-included there) -
+# `git add .` from the repo root WILL commit the plugin.
