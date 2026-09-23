@@ -5,10 +5,8 @@ This folder is a snapshot of upstream Vencord
 with exactly one addition: `src/userplugins/discordStyler/` (our plugin).
 
 - No Vencord core files are modified. No fork behavior, no rebrand.
-- The canonical plugin source lives at `../../vencord-plugin/`. Before
-  building, sync it here:
-  `cp ../../vencord-plugin/discordStyler/* src/userplugins/discordStyler/`
-  (both copies are identical as of this commit — verify with hashes).
+- The exclusive plugins live in `src/userplugins/` (9 folders — that IS the
+  canonical source, edit them in place).
 - `node_modules/`, `dist/`, and `.git` are intentionally NOT committed.
   Recreate locally: `pnpm install && pnpm build`.
 
