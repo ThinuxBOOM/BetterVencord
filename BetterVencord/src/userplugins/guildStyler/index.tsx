@@ -21,6 +21,18 @@ const WALLS_KEY = "guildWalls";
 interface GuildWall {
     name: string;
     value: string; // data: URI or https:// URL
+    accent?: string; // per-server accent (#rrggbb), optional
+}
+
+const BRAND_VARS = ["--brand-500", "--brand-560", "--brand-600", "--background-accent", "--text-brand"];
+
+/** Darken #rrggbb by factor f (0-1). */
+function shade(hex: string, f: number): string {
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex.trim());
+    if (!m) return "#3c45a5";
+    const px = (i: number) => Math.max(0, Math.min(255, Math.round(parseInt(m[i], 16) * f)));
+    const hx = (n: number) => n.toString(16).padStart(2, "0");
+    return `#${hx(px(1))}${hx(px(2))}${hx(px(3))}`;
 }
 
 function cssUrl(value: string): string {
@@ -36,16 +48,32 @@ async function readWalls(): Promise<Record<string, GuildWall>> {
     }
 }
 
+function clearGuildVars() {
+    const st = document.documentElement.style;
+    st.removeProperty("--theme-background-image");
+    for (const v of BRAND_VARS) st.removeProperty(v);
+}
+
 async function applyForGuild(guildId: string | null) {
     try {
         if (!settings.store.enabled || !guildId) {
-            document.documentElement.style.removeProperty("--theme-background-image");
+            clearGuildVars();
             return;
         }
         const walls = await readWalls();
         const hit = walls[guildId];
-        if (hit?.value) document.documentElement.style.setProperty("--theme-background-image", cssUrl(hit.value));
-        else document.documentElement.style.removeProperty("--theme-background-image");
+        const st = document.documentElement.style;
+        if (hit?.value) st.setProperty("--theme-background-image", cssUrl(hit.value));
+        else st.removeProperty("--theme-background-image");
+        if (hit?.accent && /^#[0-9a-f]{6}$/i.test(hit.accent)) {
+            st.setProperty("--brand-500", hit.accent);
+            st.setProperty("--brand-560", shade(hit.accent, 0.82));
+            st.setProperty("--brand-600", shade(hit.accent, 0.65));
+            st.setProperty("--background-accent", hit.accent);
+            st.setProperty("--text-brand", hit.accent);
+        } else {
+            for (const v of BRAND_VARS) st.removeProperty(v);
+        }
     } catch {
         /* never break Discord over a wallpaper */
     }
@@ -103,7 +131,7 @@ const settings = definePluginSettings({
         default: true,
         onChange: v => {
             if (v) void applyForGuild(currentGuild().id);
-            else document.documentElement.style.removeProperty("--theme-background-image");
+            else clearGuildVars();
         },
     },
     walls: {
@@ -137,7 +165,8 @@ function GuildWalls() {
         setStatus("Processing…");
         try {
             const value = await fileToWallpaper(file);
-            const next = { ...(await readWalls()), [guild.id]: { name: guild.name, value } };
+            const prev = (await readWalls())[guild.id];
+            const next = { ...(await readWalls()), [guild.id]: { name: guild.name, value, accent: prev?.accent } };
             await DataStore.set(WALLS_KEY, next);
             setWalls(next);
             await applyForGuild(guild.id);
@@ -149,6 +178,24 @@ function GuildWalls() {
         }
     }
 
+    async function setAccent(hex: string) {
+        if (!guild.id) {
+            setStatus("Open a server first.");
+            return;
+        }
+        const clean = hex.trim();
+        if (clean && !/^#[0-9a-f]{6}$/i.test(clean)) {
+            setStatus("Use a #rrggbb color (or Clear).");
+            return;
+        }
+        const prev = (await readWalls())[guild.id] || { name: guild.name, value: "" };
+        const next = { ...(await readWalls()), [guild.id]: { ...prev, accent: clean || undefined } };
+        await DataStore.set(WALLS_KEY, next);
+        setWalls(next);
+        await applyForGuild(guild.id);
+        setStatus(clean ? `Accent set for ${guild.name}.` : `Accent cleared for ${guild.name}.`);
+    }
+
     async function remove(id: string) {
         const next = await readWalls();
         delete next[id];
@@ -158,10 +205,17 @@ function GuildWalls() {
     }
 
     const entries = Object.entries(walls);
+    const currentAccent = (guild.id && walls[guild.id]?.accent) || "";
     return (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <div style={{ fontSize: 12, opacity: 0.8 }}>Current: <b>{guild.name}</b></div>
             <input type="file" accept="image/png,image/jpeg,image/gif,image/webp" onChange={onFile} disabled={busy} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input type="color" value={/^#[0-9a-f]{6}$/i.test(currentAccent) ? currentAccent : "#5865f2"}
+                    onChange={e => void setAccent(e.target.value)} disabled={!guild.id} />
+                <span style={{ opacity: 0.7, fontSize: 12 }}>Accent for {guild.id ? "this server" : "…"}</span>
+                {currentAccent && <button onClick={() => void setAccent("")}>Clear</button>}
+            </div>
             <div style={{ fontSize: 12, opacity: 0.85 }}>{status || "Pick an image to pin it to the current server."}</div>
             {entries.length > 0 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -180,7 +234,7 @@ function GuildWalls() {
 
 export default definePlugin({
     name: "GuildStyler",
-    description: "Per-server wallpapers: each community gets its own background, swapped automatically. Falls back to your global wallpaper.",
+    description: "Per-server wallpapers + accent colors: each community gets its own look, swapped automatically. Falls back to your global style.",
     authors: [{ name: "Thinux", id: 0n }],
     tags: ["Appearance"],
     requiresRestart: false,
@@ -197,6 +251,6 @@ export default definePlugin({
     },
 
     stop() {
-        document.documentElement.style.removeProperty("--theme-background-image");
+        clearGuildVars();
     },
 });

@@ -133,7 +133,32 @@ def install(branch: dict, log) -> None:
     ver = payload / "version.txt"
     if ver.exists():
         shutil.copy2(ver, appdata() / DATA_DIRNAME / "version.txt")
+    lock_auto_update(log)
     log("Done. Launch Discord, then enable plugins in Settings > Plugins.")
+
+
+def lock_auto_update(log) -> None:
+    """Official updates would replace our build and drop the plugins.
+
+    Fresh profiles ship with autoUpdate on, so the installer pins it off
+    (merging, never clobbering the rest of the user's settings).
+    """
+    import json
+
+    settings = appdata() / DATA_DIRNAME / "settings" / "settings.json"
+    try:
+        data = json.loads(settings.read_text(encoding="utf-8")) if settings.exists() else {}
+    except (OSError, ValueError):
+        data = {}
+    if data.get("autoUpdate") is False:
+        return
+    data["autoUpdate"] = False
+    try:
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        log("Pinned auto-update OFF (protects your BetterVencord build).")
+    except OSError as exc:
+        log(f"Note: couldn't pin auto-update off ({exc}) - toggle it in Settings > Vencord.")
 
 
 def uninstall(branch: dict, log) -> None:
@@ -171,24 +196,19 @@ class SetupApp(tk.Tk):
         self.rows = self.Frame(self)
         self.rows.pack(fill="x", padx=16)
         self.branch_vars: dict[str, tk.BooleanVar] = {}
+        self.custom_branches: list[dict] = []
         for b in find_branches():
-            var = tk.BooleanVar(value=b["key"] == "stable")
-            self.branch_vars[b["key"]] = var
-            row = self.Frame(self.rows)
-            row.pack(fill="x", pady=3)
-            tk.Checkbutton(row, text=f'{b["label"]}  ({b["app_dir"].name})', variable=var).pack(side="left")
-            self.Lbl(row, text="").pack(side="right", padx=8)  # type: ignore[attr-defined]
-            row.status_label = row.winfo_children()[-1]  # type: ignore[attr-defined]
-            row.branch = b  # type: ignore[attr-defined]
+            self.add_branch_row(b, default=b["key"] == "stable")
         if not self.branch_vars:
-            self.Lbl(self, text="No Discord install found.").pack()  # type: ignore[attr-defined]
+            self.Lbl(self, text="No Discord install found - use Add custom… below.").pack()  # type: ignore[attr-defined]
 
         btns = self.Frame(self)
         btns.pack(pady=10)
-        self.Btn(btns, text="Install", width=110, command=self.on_install).pack(side="left", padx=6)  # type: ignore[attr-defined]
-        self.Btn(btns, text="Repair", width=110, command=self.on_repair).pack(side="left", padx=6)  # type: ignore[attr-defined]
-        self.Btn(btns, text="Uninstall", width=110, command=self.on_uninstall).pack(side="left", padx=6)  # type: ignore[attr-defined]
-        self.Btn(btns, text="Launch Discord", width=130, command=self.on_launch).pack(side="left", padx=6)  # type: ignore[attr-defined]
+        self.Btn(btns, text="Install", width=100, command=self.on_install).pack(side="left", padx=5)  # type: ignore[attr-defined]
+        self.Btn(btns, text="Repair", width=100, command=self.on_repair).pack(side="left", padx=5)  # type: ignore[attr-defined]
+        self.Btn(btns, text="Uninstall", width=100, command=self.on_uninstall).pack(side="left", padx=5)  # type: ignore[attr-defined]
+        self.Btn(btns, text="Add custom…", width=110, command=self.browse_custom).pack(side="left", padx=5)  # type: ignore[attr-defined]
+        self.Btn(btns, text="Launch", width=90, command=self.on_launch).pack(side="left", padx=5)  # type: ignore[attr-defined]
 
         self.log = tk.Text(self, height=12, bg="#0c0e12", fg="#dcddde", font=("Consolas", 9))
         self.log.pack(fill="both", expand=True, padx=16, pady=(0, 16))
@@ -199,8 +219,21 @@ class SetupApp(tk.Tk):
         self.log.insert(tk.END, msg + "\n")
         self.log.see(tk.END)
 
+    def add_branch_row(self, b: dict, default: bool = False) -> None:
+        var = tk.BooleanVar(value=default)
+        self.branch_vars[b["key"]] = var
+        row = self.Frame(self.rows)
+        row.pack(fill="x", pady=3)
+        tk.Checkbutton(row, text=f'{b["label"]}  ({b["app_dir"].name})', variable=var).pack(side="left")
+        self.Lbl(row, text="").pack(side="right", padx=8)  # type: ignore[attr-defined]
+        row.status_label = row.winfo_children()[-1]  # type: ignore[attr-defined]
+        row.branch = b  # type: ignore[attr-defined]
+
+    def all_branches(self) -> list[dict]:
+        return find_branches() + self.custom_branches
+
     def chosen(self) -> list[dict]:
-        return [b for b in find_branches() if self.branch_vars.get(b["key"], tk.BooleanVar(value=False)).get()]
+        return [b for b in self.all_branches() if self.branch_vars.get(b["key"], tk.BooleanVar(value=False)).get()]
 
     def refresh_status(self) -> None:
         for row in self.rows.winfo_children():
@@ -261,19 +294,40 @@ class SetupApp(tk.Tk):
         self.refresh_status()
 
     def on_launch(self) -> None:
-        branches = self.chosen() or find_branches()
+        branches = self.chosen() or self.all_branches()
         if not branches:
             return
-        exe = branches[0]["base"] / "Update.exe"
+        b = branches[0]
+        if (b["base"] / "Update.exe").exists():
+            cmd = [str(b["base"] / "Update.exe"), "--processStart", "Discord.exe"]
+        else:
+            exe = next(b["base"].glob("Discord.exe"), None)
+            cmd = [str(exe)] if exe else None
+            if cmd is None:
+                messagebox.showwarning("Can't launch", "No launcher found - start Discord yourself.")
+                return
         try:
-            subprocess.Popen([str(exe), "--processStart", "Discord.exe"])
+            subprocess.Popen(cmd)
         except OSError as exc:
             messagebox.showerror("Launch failed", str(exc))
 
     def browse_custom(self) -> None:
-        picked = filedialog.askdirectory(title="Pick Discord install folder")
-        if picked:
-            self.say(f"Custom locations aren't enlisted yet - point me at it next version: {picked}")
+        picked = filedialog.askdirectory(title="Pick Discord install folder (the one with app-*)")
+        if not picked:
+            return
+        base = pathlib.Path(picked)
+        apps = sorted([d for d in base.glob("app-*") if (d / "resources" / "app.asar").exists()])
+        if not apps:
+            messagebox.showwarning("Not a Discord folder",
+                                   f"No app-*/resources/app.asar under:\n{picked}")
+            return
+        key = f"custom-{len(self.custom_branches)}"
+        b = {"key": key, "label": f"Custom ({base.name})", "base": base,
+             "app_dir": apps[-1], "asar": apps[-1] / "resources" / "app.asar"}
+        self.custom_branches.append(b)
+        self.add_branch_row(b, default=True)
+        self.say(f"Added custom install: {base} ({apps[-1].name}).")
+        self.refresh_status()
 
 
 def main() -> None:
