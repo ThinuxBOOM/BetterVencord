@@ -133,15 +133,19 @@ def install(branch: dict, log) -> None:
     ver = payload / "version.txt"
     if ver.exists():
         shutil.copy2(ver, appdata() / DATA_DIRNAME / "version.txt")
-    lock_auto_update(log)
+    ensure_auto_update(log)
     log("Done. Launch Discord, then enable plugins in Settings > Plugins.")
 
 
-def lock_auto_update(log) -> None:
-    """Official updates would replace our build and drop the plugins.
+def ensure_auto_update(log) -> None:
+    """Keep BetterVencord self-updating against OUR releases.
 
-    Fresh profiles ship with autoUpdate on, so the installer pins it off
-    (merging, never clobbering the rest of the user's settings).
+    The payload is a `--standalone` build with VENCORD_REMOTE pointing at
+    this fork, so Vencord's built-in HTTP updater pulls our dist (plugins
+    included) instead of official Vencord (which would drop them). Fresh
+    profiles already ship with autoUpdate on; older installs pinned it off
+    to dodge official updates — flip those back on (merging, never
+    clobbering the rest of the user's settings).
     """
     import json
 
@@ -150,15 +154,26 @@ def lock_auto_update(log) -> None:
         data = json.loads(settings.read_text(encoding="utf-8")) if settings.exists() else {}
     except (OSError, ValueError):
         data = {}
-    if data.get("autoUpdate") is False:
+    changed = False
+    if data.get("autoUpdate") is not True:
+        data["autoUpdate"] = True
+        changed = True
+    if data.get("autoUpdateNotification") is not True:
+        data["autoUpdateNotification"] = True
+        changed = True
+    if not changed:
         return
-    data["autoUpdate"] = False
     try:
         settings.parent.mkdir(parents=True, exist_ok=True)
         settings.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        log("Pinned auto-update OFF (protects your BetterVencord build).")
+        log("Auto-update ON (tracks BetterVencord releases, plugins included).")
     except OSError as exc:
-        log(f"Note: couldn't pin auto-update off ({exc}) - toggle it in Settings > Vencord.")
+        log(f"Note: couldn't enable auto-update ({exc}) - toggle it in Settings > Vencord.")
+
+
+def lock_auto_update(log) -> None:
+    """Backwards-compatible alias (v1.0.1 called this to pin updates OFF)."""
+    ensure_auto_update(log)
 
 
 def uninstall(branch: dict, log) -> None:
@@ -191,7 +206,7 @@ class SetupApp(tk.Tk):
         except OSError:
             ver = "dev payload"
         self.Lbl(self, text=f"BetterVencord Setup — {ver}").pack(pady=(14, 2))  # type: ignore[attr-defined]
-        self.Lbl(self, text="Discord + 9 exclusive plugins. No terminal, no build tools.").pack(pady=(0, 10))  # type: ignore[attr-defined]
+        self.Lbl(self, text="Discord + 10 exclusive plugins. No terminal, no build tools.").pack(pady=(0, 10))  # type: ignore[attr-defined]
 
         self.rows = self.Frame(self)
         self.rows.pack(fill="x", padx=16)

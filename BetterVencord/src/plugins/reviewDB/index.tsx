@@ -167,7 +167,11 @@ export default definePlugin({
     },
 
     renderProfileComponent: ErrorBoundary.wrap(({ user, isSideBar = false }: { user: User; isSideBar?: boolean; }) => {
-        const [reviewData] = useAwaiter(() => getReviews(user.id, { limit: 4 }), { deps: [user.id], fallbackValue: null });
+        // Fail-soft: profiles must never crash because of reviews.
+        // getReviews() itself toasts + returns an error-review on failure.
+        const [reviewData] = useAwaiter(() => user?.id ? getReviews(user.id, { limit: 4 }).catch(() => null) : Promise.resolve(null), { deps: [user?.id], fallbackValue: null });
+
+        if (!user?.id) return null;
 
         // Discord are masters at using a crap ton of html elements and css classes to create a simple ui that could have
         // been made with less than half of the number of elements, so we have to do this insanity to replicate their ui

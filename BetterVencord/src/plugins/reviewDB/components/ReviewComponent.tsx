@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+import ErrorBoundary from "@components/ErrorBoundary";
 import { Auth, getToken } from "@plugins/reviewDB/auth";
 import { Review, ReviewType } from "@plugins/reviewDB/entities";
 import { blockUser, deleteReview, deleteReviewVote, reportReview, unblockUser, voteReview } from "@plugins/reviewDB/reviewDbApi";
@@ -38,11 +39,19 @@ const BotTagClasses = findCssClassesLazy("botTagVerified", "botTagRegular", "bot
 
 const dateFormat = new Intl.DateTimeFormat();
 
-export default function ReviewComponent({ review, refetch, profileId }: { review: Review; refetch(): void; profileId: string; }) {
+// Every rendered review is third-party data (badges, timestamps, comment
+// markup). One malformed payload used to kill the whole modal and trip
+// Discord's crash screen — so the component carries its own boundary and a
+// single bad review degrades to a card instead of a crash.
+const ReviewComponent = ErrorBoundary.wrap(function ReviewComponent({ review, refetch, profileId }: { review: Review; refetch(): void; profileId: string; }) {
     const [showAll, setShowAll] = useState(false);
     const [localVote, setLocalVote] = useState<boolean | null>(review.userVote ?? null);
     const [score, setScore] = useState(review.score ?? 0);
     const [isVoting, setIsVoting] = useState(false);
+
+    // Defensive: malformed payloads (or API changes) must not crash the modal.
+    if (!review?.sender) return null;
+    const comment = typeof review.comment === "string" ? review.comment : "";
 
     useEffect(() => {
         setLocalVote(review.userVote ?? null);
@@ -218,7 +227,7 @@ export default function ReviewComponent({ review, refetch, profileId }: { review
                     onClick={() => openBlockModal()}
                 />
             )}
-            {review.sender.badges.map((badge, idx) => <ReviewBadge key={idx} {...badge} />)}
+            {(review.sender.badges ?? []).map((badge, idx) => <ReviewBadge key={idx} {...badge} />)}
 
             {
                 !settings.store.hideTimestamps && review.type !== ReviewType.System && (
@@ -227,15 +236,15 @@ export default function ReviewComponent({ review, refetch, profileId }: { review
                     </Timestamp>)
             }
             <div className={cl("review-comment")}>
-                {(review.comment.length > 200 && !showAll)
+                {(comment.length > 200 && !showAll)
                     ? (
                         <>
-                            {Parser.parseGuildEventDescription(review.comment.substring(0, 200))}...
+                            {Parser.parseGuildEventDescription(comment.substring(0, 200))}...
                             <br />
                             <a onClick={() => setShowAll(true)}>Read more</a>
                         </>
                     )
-                    : Parser.parseGuildEventDescription(review.comment)}
+                    : Parser.parseGuildEventDescription(comment)}
             </div>
 
             {review.id !== 0 && (
@@ -251,4 +260,6 @@ export default function ReviewComponent({ review, refetch, profileId }: { review
             )}
         </div>
     );
-}
+}, { message: "A review failed to render (bad data from ReviewDB). The rest still work." });
+
+export default ReviewComponent;

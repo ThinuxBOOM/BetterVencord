@@ -14,6 +14,8 @@ build/
 pyinst.log
 release/
 installer/payload/
+__pycache__/
+*.pyc
 
 # Theme backups, if any land here
 *.bak.*

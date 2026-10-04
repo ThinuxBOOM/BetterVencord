@@ -6,7 +6,7 @@
 
 import { definePluginSettings } from "@api/Settings";
 import definePlugin, { OptionType } from "@utils/types";
-import { GuildStore, React, RestAPI, SelectedGuildStore } from "@webpack/common";
+import { ConfirmModal, GuildStore, openModal, React, RestAPI, SelectedGuildStore } from "@webpack/common";
 
 /*
  * ServerJanitor - mod tools the box doesn't ship: inventory every custom
@@ -88,26 +88,45 @@ function JanitorPanel() {
 
     async function removeEmoji(id: string, name: string) {
         if (!g.id) return;
-        if (!window.confirm(`Delete emoji :${name}:?`)) return;
-        try {
-            await RestAPI.del({ url: `/guilds/${g.id}/emojis/${id}` });
-            setEmojis(prev => (prev ?? []).filter(e => e.id !== id));
-            setStatus(`Deleted :${name}:.`);
-        } catch (e) {
-            setStatus(`Delete failed: ${e instanceof Error ? e.message : e}.`);
-        }
+        // window.confirm is unreliable in Electron; use a Discord modal.
+        openModal(props => (
+            <ConfirmModal
+                {...props}
+                title={`Delete emoji :${name}:?`}
+                confirmText="Delete"
+                cancelText="Cancel"
+                onConfirm={() => void (async () => {
+                    try {
+                        await RestAPI.del({ url: `/guilds/${g.id}/emojis/${id}` });
+                        setEmojis(prev => (prev ?? []).filter(e => e.id !== id));
+                        setStatus(`Deleted :${name}:.`);
+                    } catch (e) {
+                        setStatus(`Delete failed: ${e instanceof Error ? e.message : e}.`);
+                    }
+                })()}
+            />
+        ));
     }
 
     async function removeSticker(id: string, name: string) {
         if (!g.id) return;
-        if (!window.confirm(`Delete sticker "${name}"?`)) return;
-        try {
-            await RestAPI.del({ url: `/guilds/${g.id}/stickers/${id}` });
-            setStickers(prev => (prev ?? []).filter(s => s.id !== id));
-            setStatus(`Deleted sticker "${name}".`);
-        } catch (e) {
-            setStatus(`Delete failed: ${e instanceof Error ? e.message : e}.`);
-        }
+        openModal(props => (
+            <ConfirmModal
+                {...props}
+                title={`Delete sticker "${name}"?`}
+                confirmText="Delete"
+                cancelText="Cancel"
+                onConfirm={() => void (async () => {
+                    try {
+                        await RestAPI.del({ url: `/guilds/${g.id}/stickers/${id}` });
+                        setStickers(prev => (prev ?? []).filter(s => s.id !== id));
+                        setStatus(`Deleted sticker "${name}".`);
+                    } catch (e) {
+                        setStatus(`Delete failed: ${e instanceof Error ? e.message : e}.`);
+                    }
+                })()}
+            />
+        ));
     }
 
     function exportJson() {

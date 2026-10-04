@@ -56,7 +56,10 @@ function clearGuildVars() {
 
 async function applyForGuild(guildId: string | null) {
     try {
-        if (!settings.store.enabled || !guildId) {
+        // NOTE: the setting is called `swapEnabled`, never `enabled`:
+        // `enabled` collides with Vencord's own per-plugin enable flag
+        // (Settings.plugins[name].enabled) and silently broke toggling.
+        if (!settings.store.swapEnabled || !guildId) {
             clearGuildVars();
             return;
         }
@@ -125,7 +128,7 @@ function fileToWallpaper(file: File): Promise<string> {
 }
 
 const settings = definePluginSettings({
-    enabled: {
+    swapEnabled: {
         type: OptionType.BOOLEAN,
         description: "Swap wallpapers per server",
         default: true,
@@ -247,6 +250,13 @@ export default definePlugin({
     },
 
     start() {
+        // NOTE: no migration of the old `enabled` setting key is possible or
+        // needed. `settings.store` IS `Settings.plugins.GuildStyler`, so the
+        // old key shared its slot with Vencord's own plugin enable flag —
+        // the stored value is unrecoverable conflation, and since the rename
+        // that slot belongs to the enable flag alone (deleting it would turn
+        // the plugin off). `swapEnabled` cleanly defaults to true; anyone who
+        // had wallpapers off just re-toggles one setting.
         void applyForGuild(currentGuild().id);
     },
 

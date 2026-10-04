@@ -64,11 +64,25 @@ function DraftsPanel() {
     async function copy(d: Draft) {
         try {
             await navigator.clipboard.writeText(d.content);
-            setCopied(`${d.channelId.slice(-4)} · ${timeAgo(d.at)}`);
-            setTimeout(() => setCopied(""), 2000);
         } catch {
-            setCopied("Copy failed (clipboard blocked).");
+            // Clipboard API blocked (permissions / non-secure context):
+            // fall back to execCommand so copy never fails silently.
+            try {
+                const ta = document.createElement("textarea");
+                ta.value = d.content;
+                ta.style.position = "fixed";
+                ta.style.opacity = "0";
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand("copy");
+                ta.remove();
+            } catch {
+                setCopied("Copy failed (clipboard blocked).");
+                return;
+            }
         }
+        setCopied(`${d.channelId.slice(-4)} · ${timeAgo(d.at)}`);
+        setTimeout(() => setCopied(""), 2000);
     }
 
     async function remove(at: number, channelId: string) {

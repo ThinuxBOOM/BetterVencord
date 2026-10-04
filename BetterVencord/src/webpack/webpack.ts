@@ -429,7 +429,10 @@ export function LazyComponentWebpack<T extends object = any>(factory: () => any,
 export function findLazy(filter: FilterFn) {
     if (IS_REPORTER) lazyWebpackSearchHistory.push(["find", [filter]]);
 
-    return proxyLazy(() => find(filter));
+    // BetterVencord fail-soft (see findExportedComponentLazy): never let the
+    // proxy cache null, or every later property access throws a TypeError far
+    // from the cause. An empty target degrades reads to undefined instead.
+    return proxyLazy(() => find(filter) ?? {});
 }
 
 /**
@@ -448,7 +451,8 @@ export function findByProps(...props: PropsFilter) {
 export function findByPropsLazy(...props: PropsFilter) {
     if (IS_REPORTER) lazyWebpackSearchHistory.push(["findByProps", props]);
 
-    return proxyLazy(() => findByProps(...props));
+    // BetterVencord fail-soft: see findLazy.
+    return proxyLazy(() => findByProps(...props) ?? {});
 }
 
 /**
@@ -467,7 +471,8 @@ export function findByCode(...code: CodeFilter) {
 export function findByCodeLazy(...code: CodeFilter) {
     if (IS_REPORTER) lazyWebpackSearchHistory.push(["findByCode", code]);
 
-    return proxyLazy(() => findByCode(...code));
+    // BetterVencord fail-soft: see findLazy.
+    return proxyLazy(() => findByCode(...code) ?? {});
 }
 
 function populateFluxStoreMap() {
@@ -522,7 +527,8 @@ export function findStore(name: StoreNameFilter) {
 export function findStoreLazy(name: StoreNameFilter) {
     if (IS_REPORTER) lazyWebpackSearchHistory.push(["findStore", [name]]);
 
-    return proxyLazy(() => findStore(name));
+    // BetterVencord fail-soft: see findLazy.
+    return proxyLazy(() => findStore(name) ?? {});
 }
 
 /**
@@ -574,7 +580,13 @@ export function findExportedComponentLazy<T extends object = any>(...props: Prop
         const res = find(filters.byProps(...props), { isIndirect: true });
         if (!res)
             handleModuleNotFound("findExportedComponent", ...props);
-        return res[props[0]];
+        // BetterVencord fail-soft: in prod handleModuleNotFound only logs,
+        // so a renamed Discord module used to die here with
+        // "Cannot read properties of null (reading 'Modal')" on first render
+        // and take down the whole tree (crash screen). Degrade to undefined
+        // instead — LazyComponent renders nothing. Dev builds still throw
+        // early inside handleModuleNotFound above.
+        return res?.[props[0]];
     });
 }
 

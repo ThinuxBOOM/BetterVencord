@@ -31,7 +31,9 @@ export async function getToken() {
 export async function updateAuth(newAuth: ReviewDBAuth) {
     return DataStore.update(DATA_STORE_KEY, auth => {
         auth ??= {};
-        Auth = auth[UserStore.getCurrentUser().id] ??= {};
+        const myId = UserStore.getCurrentUser()?.id;
+        if (!myId) return auth;
+        Auth = auth[myId] ??= {};
 
         if (newAuth.token) Auth.token = newAuth.token;
         if (newAuth.user) Auth.user = newAuth.user;

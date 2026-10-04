@@ -666,10 +666,20 @@ function HomeIconPicker({ setValue }: { setValue(v: string): void; }) {
 
 // ---------------------------------------------------------------- file sync (desktop, opt-in)
 
-const Native = VencordNative.pluginHelpers.DiscordStyler as PluginNative<typeof import("./native")>;
+/** Renderer-side native bridge. Null on web builds or when the plugin was
+ *  built without native.ts — file-sync then no-ops instead of throwing. */
+function getNative(): PluginNative<typeof import("./native")> | null {
+    try {
+        const v = (typeof VencordNative !== "undefined" ? (VencordNative as any) : null)?.pluginHelpers?.DiscordStyler;
+        return (v ?? null) as PluginNative<typeof import("./native")> | null;
+    } catch {
+        return null;
+    }
+}
 
 async function syncToFile(): Promise<void> {
-    if (!Native) throw new Error("native helper unavailable (rebuild with native.ts)");
+    const Native = getNative();
+    if (!Native) throw new Error("file-sync needs the desktop build (native.ts)");
     await Native.writeManagedBlock(
         String(settings.store.syncFileName),
         MANAGED_START,

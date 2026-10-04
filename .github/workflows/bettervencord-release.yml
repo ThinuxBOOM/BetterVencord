@@ -1,0 +1,122 @@
+# BetterVencord release pipeline.
+#
+# Why this exists: the in-app updater (src/main/updater/http.ts) pulls
+# patcher.js / preload.js / renderer.js / renderer.css from THIS repo's
+# GitHub Releases (/releases/latest) and matches the release TITLE's last
+# word against the baked git hash. If releases stop, or the payload isn't a
+# --standalone build with VENCORD_REMOTE set to this fork, auto-update is
+# silently dead and users rot until Discord breaks their plugins.
+#
+# Trigger: push a tag like bv1.1.0, or Run workflow manually.
+# Output: GitHub Release titled "BetterVencord <tag> <shorthash>" with the
+# updater's dist assets + BetterVencord-Setup.exe attached.
+
+name: BetterVencord Release
+
+on:
+  push:
+    tags:
+      - "bv*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. bv1.1.0)"
+        required: false
+        default: ""
+
+env:
+  VENCORD_REMOTE: ThinuxBOOM/BetterVencord
+
+jobs:
+  release:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag + short hash
+        id: meta
+        run: |
+          $sha = (git rev-parse --short HEAD).Trim()
+          if ("${{ github.ref_type }}" -eq "tag") { $tag = "${{ github.ref_name }}" }
+          elseif ("${{ inputs.tag }}" -ne "") { $tag = "${{ inputs.tag }}" }
+          else { $tag = "bv-dev-$sha" }
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "sha=$sha" >> $env:GITHUB_OUTPUT
+          "title=BetterVencord $tag $sha" >> $env:GITHUB_OUTPUT
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: "pnpm"
+          cache-dependency-path: BetterVencord/pnpm-lock.yaml
+
+      - name: Install dependencies
+        working-directory: BetterVencord
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        working-directory: BetterVencord
+        run: pnpm testTsc
+
+      - name: Build standalone payload (HTTP updater, our remote)
+        working-directory: BetterVencord
+        run: pnpm build --standalone
+
+      - name: Assemble installer payload
+        run: |
+          $dist = "BetterVencord/dist"
+          $payload = "installer/payload"
+          New-Item -ItemType Directory -Force -Path "$payload/dist" | Out-Null
+          Copy-Item "$dist/patcher.js", "$dist/preload.js", "$dist/renderer.js", "$dist/renderer.css" "$payload/dist/"
+          Copy-Item "$dist/*.LEGAL.txt" "$payload/dist/" -ErrorAction SilentlyContinue
+          "BetterVencord ${{ steps.meta.outputs.tag }} (Vencord $(node -p "require('./BetterVencord/package.json').version") + 10 plugins) ${{ steps.meta.outputs.sha }}" | Out-File -Encoding utf8 "$payload/version.txt"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build Setup exe
+        run: |
+          pip install pyinstaller customtkinter
+          python -m PyInstaller --noconfirm --onefile --windowed `
+            --name BetterVencord-Setup `
+            --add-data "installer/payload;payload" `
+            installer/installer.py
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Move-Item dist/BetterVencord-Setup.exe release/BetterVencord-Setup.exe -Force
+          $hash = (Get-FileHash release/BetterVencord-Setup.exe -Algorithm SHA256).Hash.ToLower()
+          "$hash  BetterVencord-Setup.exe" | Out-File -Encoding utf8 release/SHA256.txt
+          Get-ChildItem release/
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: ${{ steps.meta.outputs.title }}
+          files: |
+            installer/payload/dist/patcher.js
+            installer/payload/dist/preload.js
+            installer/payload/dist/renderer.js
+            installer/payload/dist/renderer.css
+            release/BetterVencord-Setup.exe
+            release/SHA256.txt
+          body: |
+            ## BetterVencord ${{ steps.meta.outputs.tag }}
+
+            Run `BetterVencord-Setup.exe`, tick your Discord install, Install, launch Discord, enable plugins in Settings.
+
+            In-app updates track this repo's releases from now on (autoUpdate stays ON) — no more frozen builds rotting under Discord updates. If a Discord client update replaces `app.asar`, re-run the Setup (Repair/Install, 30 seconds).
+
+            Verify: `SHA256.txt` must match the downloaded exe.

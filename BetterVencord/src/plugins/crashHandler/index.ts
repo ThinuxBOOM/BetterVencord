@@ -78,6 +78,26 @@ export default definePlugin({
     handleCrash(_this: any, errorState: any) {
         DataStore.del("KeepCurrentChannel_previousData");
 
+        // BetterVencord: stash a machine-readable crash report where it can
+        // be retrieved without DevTools (toasts/settings truncate it).
+        // Best-effort only — reporting must never make a crash worse.
+        try {
+            const err = errorState?.error;
+            const report = {
+                at: new Date().toISOString(),
+                message: String(err?.message ?? err ?? "unknown"),
+                stack: String(err?.stack ?? "").slice(0, 8000),
+                componentStack: String(errorState?.info?.componentStack ?? "").slice(0, 8000),
+            };
+            const json = JSON.stringify(report);
+            try {
+                console.error("[BetterVencord] Crash report:", json);
+            } catch { }
+            try {
+                (VencordNative.pluginHelpers?.BetterHealth?.appendCrashLog(json) as Promise<unknown> | undefined)?.catch(() => { });
+            } catch { }
+        } catch { }
+
         if (IS_DEV) {
             try {
                 if (errorState?.info && "componentStack" in errorState.info) {

@@ -7,7 +7,7 @@
 import * as DataStore from "@api/DataStore";
 import { definePluginSettings } from "@api/Settings";
 import definePlugin, { OptionType } from "@utils/types";
-import { Menu, React, showToast } from "@webpack/common";
+import { ConfirmModal, Menu, openModal, React, showToast, TextInput } from "@webpack/common";
 
 /*
  * RemindMe - right-click any message → "Remind me in an hour" (or a custom
@@ -162,11 +162,28 @@ export default definePlugin({
                     id="ds-remind-custom"
                     label="Remind me in… (custom)"
                     action={() => {
-                        const raw = window.prompt("Remind me in how many minutes?", String(quickMins));
-                        if (raw == null) return;
-                        const mins = Math.round(Number(raw));
-                        if (!Number.isFinite(mins) || mins < 1) return;
-                        void addReminder(msg.channel_id, msg.id, snippet, author, mins);
+                        // window.prompt is blocked in Discord's Electron shell;
+                        // use a native modal so this never fails silently.
+                        let minutes = String(quickMins);
+                        openModal(props => (
+                            <ConfirmModal
+                                {...props}
+                                title="Remind me in…"
+                                confirmText="Set reminder"
+                                cancelText="Cancel"
+                                onConfirm={() => {
+                                    const mins = Math.round(Number(minutes));
+                                    if (!Number.isFinite(mins) || mins < 1) return;
+                                    void addReminder(msg.channel_id, msg.id, snippet, author, mins);
+                                }}
+                            >
+                                <TextInput
+                                    defaultValue={String(quickMins)}
+                                    placeholder="Minutes from now"
+                                    onChange={v => { minutes = v; }}
+                                />
+                            </ConfirmModal>
+                        ));
                     }}
                 />,
             );

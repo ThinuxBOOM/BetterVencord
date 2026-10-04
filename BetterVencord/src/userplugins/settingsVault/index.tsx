@@ -6,7 +6,7 @@
 
 import { definePluginSettings } from "@api/Settings";
 import definePlugin, { OptionType } from "@utils/types";
-import { React } from "@webpack/common";
+import { ConfirmModal, openModal, React } from "@webpack/common";
 
 /*
  * SettingsVault - one-file backup and restore for your whole Vencord
@@ -16,7 +16,38 @@ import { React } from "@webpack/common";
  * plugin's native.ts); on web they restore via the built-in uploader.
  */
 
+/** Renderer-side VencordNative bridge. Undefined on web builds — every
+ *  access must go through the helpers below, never bare `VencordNative`. */
+function getNative(): any | null {
+    try {
+        return typeof VencordNative !== "undefined" ? (VencordNative as any) : null;
+    } catch {
+        return null;
+    }
+}
 declare const VencordNative: any;
+
+function confirmOverwrite(): Promise<boolean> {
+    return new Promise(resolve => {
+        try {
+            openModal(props => (
+                <ConfirmModal
+                    {...props}
+                    title="Restore backup?"
+                    confirmText="Overwrite everything"
+                    cancelText="Cancel"
+                    onConfirm={() => resolve(true)}
+                    onCancel={() => resolve(false)}
+                >
+                    Overwrite current settings, QuickCSS and theme files with this backup?
+                </ConfirmModal>
+            ));
+        } catch {
+            // Modals unavailable (very early startup?) — fall back, never hang.
+            resolve(window.confirm("Overwrite current settings, QuickCSS and theme files with this backup?"));
+        }
+    });
+}
 
 const settings = definePluginSettings({
     panel: {
@@ -43,13 +74,15 @@ function download(name: string, text: string) {
 
 async function collectThemes(): Promise<{ name: string; css: string; }[]> {
     const out: { name: string; css: string; }[] = [];
+    const Native = getNative();
+    if (!Native?.themes?.getThemesList) return out;
     try {
-        const list = (await VencordNative.themes.getThemesList()) as { name?: string; filename?: string; }[];
+        const list = (await Native.themes.getThemesList()) as { name?: string; filename?: string; }[];
         for (const t of list) {
             const name = String(t?.filename || t?.name || "");
             if (!name) continue;
             try {
-                const css = String(await VencordNative.themes.getThemeData(name));
+                const css = String(await Native.themes.getThemeData(name));
                 out.push({ name, css });
             } catch { /* skip unreadable theme */ }
         }
@@ -63,14 +96,19 @@ function VaultPanel() {
 
     async function exportAll() {
         if (busy) return;
+        const Native = getNative();
+        if (!Native?.settings?.get) {
+            setStatus("Export needs the desktop app (web builds can't reach settings storage).");
+            return;
+        }
         setBusy(true);
         setStatus("Collecting…");
         try {
             const vault: Vault = {
                 version: 1,
                 exportedAt: new Date().toISOString(),
-                settings: await VencordNative.settings.get(),
-                quickCss: await VencordNative.quickCss.get(),
+                settings: await Native.settings.get(),
+                quickCss: await Native.quickCss.get(),
                 themes: await collectThemes(),
             };
             download(`vencord-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(vault));
@@ -87,6 +125,11 @@ function VaultPanel() {
         const file = e.target.files?.[0];
         e.target.value = "";
         if (!file || busy) return;
+        const Native = getNative();
+        if (!Native?.settings?.set) {
+            setStatus("Import needs the desktop app (web builds can't write settings storage).");
+            return;
+        }
         setBusy(true);
         setStatus("Restoring…");
         try {
@@ -94,20 +137,21 @@ function VaultPanel() {
             if (!vault || vault.version !== 1 || typeof vault.settings !== "object") {
                 throw new Error("That file is not a SettingsVault backup.");
             }
-            if (!window.confirm("Overwrite current settings, QuickCSS and theme files with this backup?")) {
+            if (!(await confirmOverwrite())) {
                 setStatus("Cancelled.");
                 return;
             }
-            await VencordNative.settings.set(vault.settings);
-            await VencordNative.quickCss.set(vault.quickCss || "");
+            await Native.settings.set(vault.settings);
+            await Native.quickCss.set(vault.quickCss || "");
             let restored = 0;
             for (const t of vault.themes || []) {
+                if (!t?.name || typeof t.css !== "string") continue;
                 try {
-                    await VencordNative.themes.uploadTheme(t.name, t.css);
+                    await Native.themes.uploadTheme(t.name, t.css);
                     restored++;
                 } catch {
                     try {
-                        await VencordNative.pluginHelpers.SettingsVault.writeThemeFile(t.name, t.css);
+                        await Native.pluginHelpers.SettingsVault.writeThemeFile(t.name, t.css);
                         restored++;
                     } catch { /* report below */ }
                 }
