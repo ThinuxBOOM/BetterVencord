@@ -53,6 +53,11 @@ jobs:
           "title=BetterVencord $tag $sha" >> $env:GITHUB_OUTPUT
 
       - uses: pnpm/action-setup@v4
+        with:
+          # package.json is NOT at the repo root (it lives in BetterVencord/),
+          # so point the installer at it explicitly — otherwise it errors
+          # with "No pnpm version is specified".
+          package_json_file: BetterVencord/package.json
 
       - name: Use Node.js 24
         uses: actions/setup-node@v4
