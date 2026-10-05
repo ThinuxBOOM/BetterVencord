@@ -27,7 +27,10 @@ export default definePlugin({
 
     patches: [
         {
-            find: "#{intl::MESSAGE_UTILITIES_A11Y_LABEL}",
+            // BetterVencord note: ported from upstream — Discord changed the
+            // surrounding message-utilities code so the old find no longer
+            // matched and the plugin silently did nothing.
+            find: "#{intl::MESSAGE_UTILITIES_A11Y_LABEL}),children",
             replacement: {
                 // isExpanded: isShiftPressed && other conditions...
                 match: /isExpanded:\i&&(.+?),/,
