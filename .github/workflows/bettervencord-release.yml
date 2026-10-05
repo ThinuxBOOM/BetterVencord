@@ -76,14 +76,16 @@ jobs:
 
       - name: Build standalone payload (HTTP updater, our remote)
         working-directory: BetterVencord
-        run: pnpm build --standalone
+        run: |
+          if (!(Test-Path scripts/build/build.mjs)) { throw "Build pipeline missing: scripts/build/build.mjs not in checkout (check .gitignore!)" }
+          pnpm build --standalone
 
       - name: Assemble installer payload
         run: |
           $dist = "BetterVencord/dist"
           $payload = "installer/payload"
           New-Item -ItemType Directory -Force -Path "$payload/dist" | Out-Null
-          Copy-Item "$dist/patcher.js", "$dist/preload.js", "$dist/renderer.js", "$dist/renderer.css" "$payload/dist/"
+          Copy-Item "$dist/patcher.js", "$dist/preload.js", "$dist/renderer.js", "$dist/renderer.css", "$dist/vencordDesktopMain.js", "$dist/vencordDesktopPreload.js", "$dist/vencordDesktopRenderer.js", "$dist/vencordDesktopRenderer.css" "$payload/dist/"
           Copy-Item "$dist/*.LEGAL.txt" "$payload/dist/" -ErrorAction SilentlyContinue
           "BetterVencord ${{ steps.meta.outputs.tag }} (Vencord $(node -p "require('./BetterVencord/package.json').version") + 10 plugins) ${{ steps.meta.outputs.sha }}" | Out-File -Encoding utf8 "$payload/version.txt"
 
@@ -115,6 +117,10 @@ jobs:
             installer/payload/dist/preload.js
             installer/payload/dist/renderer.js
             installer/payload/dist/renderer.css
+            installer/payload/dist/vencordDesktopMain.js
+            installer/payload/dist/vencordDesktopPreload.js
+            installer/payload/dist/vencordDesktopRenderer.js
+            installer/payload/dist/vencordDesktopRenderer.css
             release/BetterVencord-Setup.exe
             release/SHA256.txt
           body: |
