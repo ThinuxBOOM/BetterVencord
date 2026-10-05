@@ -86,6 +86,12 @@ export let ExperimentStore: t.ExperimentStore;
 export let UserAffinitiesStore: t.UserAffinitiesStore;
 export let ApplicationStreamingStore: t.ApplicationStreamingStore;
 export let ApplicationStreamPreviewStore: t.ApplicationStreamPreviewStore;
+// BetterVencord note: selectively ported from upstream's "Type more stores"
+// (only the stores our plugins consume; the rest of that commit is
+// type-precision churn with no runtime effect).
+export let MessageRequestStore: t.MessageRequestStore;
+export let GIFPickerViewStore: t.GIFPickerViewStore;
+export let GuildReadStateStore: t.GuildReadStateStore;
 
 /**
  * @see jsdoc of {@link t.useStateFromStores}
@@ -144,6 +150,9 @@ waitForStore("ExperimentStore", m => ExperimentStore = m);
 waitForStore("UserAffinitiesV2Store", m => UserAffinitiesStore = m);
 waitForStore("ApplicationStreamingStore", m => ApplicationStreamingStore = m);
 waitForStore("ApplicationStreamPreviewStore", m => ApplicationStreamPreviewStore = m);
+waitForStore("MessageRequestStore", m => MessageRequestStore = m);
+waitForStore("GIFPickerViewStore", m => GIFPickerViewStore = m);
+waitForStore("GuildReadStateStore", m => GuildReadStateStore = m);
 waitForStore("ThemeStore", m => {
     ThemeStore = m;
     // Importing this directly causes all webpack commons to be imported, which can easily cause circular dependencies.
