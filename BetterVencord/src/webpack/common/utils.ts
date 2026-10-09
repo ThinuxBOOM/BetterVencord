@@ -90,13 +90,19 @@ export const Toasts: t.Toasts = mapMangledModuleLazy(".currentToastMap.has(", {
     pop: filters.byCode(".delete(")
 });
 
-export const createToast: t.createToast = findByCodeLazy('variant:"default",icon:', ".duration");
+export const createToast = findByCodeLazy('variant:"default",icon:', ".duration") as unknown as (message: string, type?: string, options?: ToastOptions) => t.NewToastData;
 
 /**
- * Show a simple toast. If you need more options, use Toasts.show manually
+ * Show a simple toast. If you need more options, use Toasts.show manually.
+ *
+ * NOTE: Discord's createToast takes (message, type, options) POSITIONALLY.
+ * Passing a single {message, type, options} object makes it the toast's
+ * `text`, and Discord then renders that raw object -> "Minified React
+ * error #31" crash (proven via crash.log on Discord 1.0.9261). Keep the
+ * positional call even though discord-types declares an object signature.
  */
 export function showToast(message: string, type: t.ToastType = "message", options?: ToastOptions) {
-    Toasts.show(createToast({ message, type, options }));
+    Toasts.show(createToast(message, type, options));
 }
 
 export const UserUtils = {
